@@ -104,29 +104,28 @@ export default connect(state => {
   let balance = [];
 
   const {accounts, journalEntries, userInput: {startPeriod, endPeriod, startAccount, endAccount, format}} = state;
-  // Filter accounts
-  const filteredAccounts = accounts
-    .filter((instance) => valueBetweenRange(startAccount, endAccount, instance.ACCOUNT))
 
-  // Extract numbers only for easy filtering of journal entries
-  const filteredAccountsKeys = filteredAccounts.map((instance) => instance.ACCOUNT)
-
-  // Filter/sort journals
-  const validJournalEntries = journalEntries.filter((instance) => {
-    // Periods must be defined in order to filter
-    if (!startPeriod || !endPeriod) {
-      return;
+  balance = accounts.map((account) => {
+    // Skip accounts that aren't between the specified ranges
+    if (!valueBetweenRange(startAccount, endAccount, account.ACCOUNT)) {
+      return null
     }
 
-    // Check if the entry belongs to a relevant account
-    if (filteredAccountsKeys.indexOf(instance.ACCOUNT) < 0) {
-      return;
-    }
+    // Filter journal entries that are between the specified date ranges
+    const entries = journalEntries.filter((line) => {
+      // Skip lines that does not belong to the current account
+      if (line.ACCOUNT !== account.ACCOUNT) {
+        return false;
+      }
 
-    return valueBetweenRange(startPeriod.getTime(), endPeriod.getTime(), instance.PERIOD)
-  })
+      // If there are not date periods specified, skip
+      if (!startPeriod || !endPeriod) {
+        return false
+      }
 
-  balance = filteredAccounts.map((account) => {
+      return valueBetweenRange(startPeriod.getTime(), endPeriod.getTime(), line.PERIOD)
+    });
+
     const line = {
       ACCOUNT: account.ACCOUNT,
       DESCRIPTION: account.LABEL,
@@ -134,15 +133,16 @@ export default connect(state => {
       CREDIT: 0,
       BALANCE: 0
     };
-    return validJournalEntries
-      .filter((entry) => entry.ACCOUNT === account.ACCOUNT)
-      .reduce((acc, entry) => {
-        acc.DEBIT += entry.DEBIT
-        acc.CREDIT += entry.CREDIT
-        acc.BALANCE = acc.DEBIT - acc.CREDIT
-        return acc
-      }, line)
-  }).filter((line) => line.DEBIT !== 0 || line.CREDIT !== 0)
+
+    const entry = entries.reduce((acc, entry) => {
+      acc.DEBIT += entry.DEBIT
+      acc.CREDIT += entry.CREDIT
+      acc.BALANCE = acc.DEBIT - acc.CREDIT
+      return acc
+    }, line)
+
+    return entry.DEBIT !== 0 || entry.CREDIT !== 0 ? entry : null
+  }).filter((o) => !!o)
 
   const totalCredit = balance.reduce((acc, entry) => acc + entry.CREDIT, 0);
   const totalDebit = balance.reduce((acc, entry) => acc + entry.DEBIT, 0);
